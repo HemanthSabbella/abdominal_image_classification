@@ -16,9 +16,11 @@ Code base for the Medical Image Segmentation on 12 abdominal organs
 <li>https://github.com/mberkay0/pretrained-backbones-unet/tree/main</li>
 </ul>
 
-Some pointers: 
+<h2>Pointers to handle noisy images</h2> 
+
 - For noisy images: Can change the loss funcation that is robut to handle noise (like Tversky loss)
 - Denoise it using gaussian filters. 
   
 <h2>Others:</h2> 
+
 - GPU access and setup

@@ -3,15 +3,43 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
 from scipy import ndimage
+import os
+from PIL import Image
+import shutil
 from model import UNet
 from dataloader import MedicalImageDataset, custom_transform
 
 train_image_dir = 'Public_leaderboard_data/train_images'
 train_label_dir = 'Public_leaderboard_data/train_labels'
-voxel_spacing_file = 'dataset/spacing_mm.txt'
+val_image_dir = 'Public_leaderboard_data/val_images'
+val_label_dir = 'Public_leaderboard_data/val_labels'
+test_image_dir = 'Public_leaderboard_data/test_images'
+voxel_spacing_file = 'Public_leaderboard_data/spacing_mm.txt'
+bbox_file = 'Public_leaderboard_data/test1_bbox.txt'
 
-train_dataset = MedicalImageDataset(image_dir=train_image_dir, label_dir=train_label_dir, voxel_spacing_file=voxel_spacing_file, transform=custom_transform)
+train_dataset = MedicalImageDataset(
+    image_dir=train_image_dir, 
+    label_dir=train_label_dir, 
+    voxel_spacing_file=voxel_spacing_file, 
+    transform=custom_transform
+)
 train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+
+val_dataset = MedicalImageDataset(
+    image_dir=val_image_dir, 
+    label_dir=val_label_dir, 
+    voxel_spacing_file=voxel_spacing_file, 
+    transform=custom_transform
+)
+val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
+
+test_dataset = MedicalImageDataset(
+    image_dir=test_image_dir, 
+    label_dir=None, 
+    voxel_spacing_file=None, 
+    transform=custom_transform
+)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
@@ -74,23 +102,49 @@ def validate_model(model, val_loader):
             val_loss += loss.item()
     return val_loss / len(val_loader)
 
-def evaluate_model(model, test_loader, voxel_spacing, tolerance=1.0):
+def generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir):
     model.eval()
-    dice_scores = []
-    nsd_scores = []
-    with torch.no_grad():
-        for images, labels, spacing in test_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            outputs = model(images)
-            preds = torch.argmax(outputs, dim=1)
-            for i in range(preds.shape[0]):
-                dice = dice_score(preds[i], labels[i])
-                dice_scores.append(dice)
-                nsd = normalized_surface_dice(preds[i].cpu().numpy(), labels[i].cpu().numpy(), spacing[i], tolerance)
-                nsd_scores.append(nsd)
-    avg_dice = np.mean(dice_scores)
-    avg_nsd = np.mean(nsd_scores)
-    return avg_dice, avg_nsd
+    os.makedirs(output_dir, exist_ok=True)
 
-train_model(model, train_loader, None, epochs=50, model_path='final_unet_model.pth')
+    bbox_data = {}
+    with open(bbox_file, 'r') as f:
+        for line in f:
+            parts = line.strip().split(': ')
+            key = tuple(map(int, parts[0].strip('<>').split(', ')))
+            bbox = list(map(int, parts[1].strip('[]').split(', ')))
+            bbox_data[key] = bbox
+
+    with torch.no_grad():
+        for batch in test_loader:
+            images = batch['images'].to(device)
+            ct_id = batch['ct_id']
+            num_slices = images.shape[-1]
+
+            for slice_idx in range(num_slices):
+                for organ in range(1, 13):
+                    bbox_key = (int(ct_id[0]), slice_idx + 1, organ)
+                    if bbox_key in bbox_data:
+                        xmin, ymin, xmax, ymax = bbox_data[bbox_key]
+                        cropped_image = images[0, 0, ymin:ymax, xmin:xmax].unsqueeze(0).unsqueeze(0)
+                        cropped_output = model(cropped_image)
+                        pred_crop = torch.argmax(cropped_output, dim=1)[0].cpu().numpy()
+
+                        pred_slice = np.zeros((512, 512), dtype=np.uint8)
+                        pred_slice[ymin:ymax, xmin:xmax] = pred_crop
+
+                        ct_folder = os.path.join(output_dir, f'{ct_id[0]:02d}')
+                        os.makedirs(ct_folder, exist_ok=True)
+                        slice_filename = os.path.join(ct_folder, f'{slice_idx+1}.png')
+                        Image.fromarray(pred_slice).save(slice_filename)
+
+def zip_results(output_dir, zip_filename):
+    shutil.make_archive(zip_filename, 'zip', output_dir)
+
+train_model(model, train_loader, val_loader, epochs=50, model_path='final_unet_model.pth')
+
+output_dir = 'test_labels'
+generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir)
+
+zip_filename = 'test_labels'
+zip_results(output_dir, zip_filename)
+print(f"Results zipped to {zip_filename}.zip")

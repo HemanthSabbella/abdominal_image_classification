@@ -13,7 +13,7 @@ train_image_dir = 'Public_leaderboard_data/train_images'
 train_label_dir = 'Public_leaderboard_data/train_labels'
 val_image_dir = 'Public_leaderboard_data/val_images'
 val_label_dir = 'Public_leaderboard_data/val_labels'
-test_image_dir = 'Public_leaderboard_data/test_images'
+test_image_dir = 'Public_leaderboard_data/test1_images'
 voxel_spacing_file = 'Public_leaderboard_data/spacing_mm.txt'
 bbox_file = 'Public_leaderboard_data/test1_bbox.txt'
 

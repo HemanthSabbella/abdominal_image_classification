@@ -16,9 +16,11 @@ class MedicalImageDataset(Dataset):
         voxel_spacings = {}
         with open(voxel_spacing_file, 'r') as f:
             for line in f:
-                ct_id, x_spacing, y_spacing, z_spacing = line.strip().split(',')
-                voxel_spacings[ct_id] = (float(x_spacing), float(y_spacing), float(z_spacing))
+                ct_id, spacing_str = line.strip().split(': ')
+                x_spacing, y_spacing, z_spacing = map(float, spacing_str.strip('[]').split(', '))
+                voxel_spacings[ct_id] = (x_spacing, y_spacing, z_spacing)
         return voxel_spacings
+
 
     def __len__(self):
         return len(self.ct_scans)
@@ -27,27 +29,37 @@ class MedicalImageDataset(Dataset):
         ct_scan_id = self.ct_scans[idx]
         image_folder = os.path.join(self.image_dir, ct_scan_id)
         label_folder = os.path.join(self.label_dir, ct_scan_id)
-        image_slices = sorted(os.listdir(image_folder))
-        label_slices = sorted(os.listdir(label_folder))
+
+        image_slices = [f for f in sorted(os.listdir(image_folder)) if not f.startswith('.')]
+        label_slices = [f for f in sorted(os.listdir(label_folder)) if not f.startswith('.')]
+
         images = []
         labels = []
+
         for image_slice, label_slice in zip(image_slices, label_slices):
             image_path = os.path.join(image_folder, image_slice)
             label_path = os.path.join(label_folder, label_slice)
-            image = Image.open(image_path).convert("L")
-            label = Image.open(label_path)
-            images.append(np.array(image))
-            labels.append(np.array(label))
+
+            if os.path.isfile(image_path) and os.path.isfile(label_path):
+                image = Image.open(image_path).convert("L")
+                label = Image.open(label_path)
+                images.append(np.array(image))
+                labels.append(np.array(label))
+
         images = np.stack(images, axis=-1)
         labels = np.stack(labels, axis=-1)
         voxel_spacing = self.voxel_spacings[ct_scan_id]
+
         if self.transform:
             images = self.transform(images)
             labels = self.transform(labels)
+
         images = torch.tensor(images, dtype=torch.float32).unsqueeze(0)
         labels = torch.tensor(labels, dtype=torch.long)
+
         sample = {'images': images, 'labels': labels, 'voxel_spacing': voxel_spacing}
         return sample
+
 
 def custom_transform(image):
     return image / 255.0

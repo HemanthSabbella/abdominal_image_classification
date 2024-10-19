@@ -9,13 +9,13 @@ import shutil
 from model import UNet
 from dataloader import MedicalImageDataset, custom_transform
 
-train_image_dir = 'Public_leaderboard_data/train_images'
-train_label_dir = 'Public_leaderboard_data/train_labels'
-val_image_dir = 'Public_leaderboard_data/val_images'
-val_label_dir = 'Public_leaderboard_data/val_labels'
-test_image_dir = 'Public_leaderboard_data/test1_images'
-voxel_spacing_file = 'Public_leaderboard_data/spacing_mm.txt'
-bbox_file = 'Public_leaderboard_data/test1_bbox.txt'
+train_image_dir = '../Public_leaderboard_data/train_images'
+train_label_dir = '../Public_leaderboard_data/train_labels'
+val_image_dir = '../Public_leaderboard_data/val_images'
+val_label_dir = '../Public_leaderboard_data/val_labels'
+test_image_dir = '../Public_leaderboard_data/test1_images'
+voxel_spacing_file = '../Public_leaderboard_data/spacing_mm.txt'
+bbox_file = '../Public_leaderboard_data/test1_bbox.txt'
 
 train_dataset = MedicalImageDataset(
     image_dir=train_image_dir, 
@@ -33,13 +33,13 @@ val_dataset = MedicalImageDataset(
 )
 val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
 
-test_dataset = MedicalImageDataset(
-    image_dir=test_image_dir, 
-    label_dir=None, 
-    voxel_spacing_file=None, 
-    transform=custom_transform
-)
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+# test_dataset = MedicalImageDataset(
+#     image_dir=test_image_dir, 
+#     label_dir=None, 
+#     voxel_spacing_file=voxel_spacing_file, 
+#     transform=custom_transform
+# )
+# test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
@@ -73,22 +73,36 @@ def train_model(model, train_loader, val_loader, epochs, model_path='unet_model.
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
-        for images, labels in train_loader:
-            images = images.to(device)
-            labels = labels.to(device)
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            running_loss += loss.item()
+        for batch in train_loader:
+            images = batch['images'].to(device)
+            labels = batch['labels'].to(device)
+
+            num_slices = images.shape[-1]
+            batch_loss = 0.0
+
+            for slice_idx in range(num_slices):
+                image_slice = images[:, :, :, :, slice_idx]
+                label_slice = labels[:, :, :, slice_idx]
+
+                outputs = model(image_slice)
+                loss = criterion(outputs, label_slice)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                batch_loss += loss.item()
+
+            running_loss += batch_loss / num_slices
+
         val_loss = validate_model(model, val_loader)
         print(f"Epoch {epoch+1}/{epochs}, Train Loss: {running_loss:.4f}, Val Loss: {val_loss:.4f}")
         checkpoint_path = f'unet_model_epoch_{epoch+1}.pth'
         torch.save(model.state_dict(), checkpoint_path)
         print(f"Checkpoint saved to {checkpoint_path}")
+
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
+
+
 
 def validate_model(model, val_loader):
     model.eval()
@@ -142,9 +156,9 @@ def zip_results(output_dir, zip_filename):
 
 train_model(model, train_loader, val_loader, epochs=50, model_path='final_unet_model.pth')
 
-output_dir = 'test_labels'
-generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir)
+# output_dir = 'test_labels'
+# generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir)
 
-zip_filename = 'test_labels'
-zip_results(output_dir, zip_filename)
-print(f"Results zipped to {zip_filename}.zip")
+# zip_filename = 'test_labels'
+# zip_results(output_dir, zip_filename)
+# print(f"Results zipped to {zip_filename}.zip")

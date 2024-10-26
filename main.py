@@ -4,18 +4,15 @@ from torch.utils.data import DataLoader
 import numpy as np
 from scipy import ndimage
 import os
-from PIL import Image
-import shutil
 from model import UNet
 from dataloader import MedicalImageDataset, custom_transform
+from PIL import Image
 
 train_image_dir = '../Public_leaderboard_data/train_images'
 train_label_dir = '../Public_leaderboard_data/train_labels'
 val_image_dir = '../Public_leaderboard_data/val_images'
 val_label_dir = '../Public_leaderboard_data/val_labels'
-test_image_dir = '../Public_leaderboard_data/test1_images'
 voxel_spacing_file = '../Public_leaderboard_data/spacing_mm.txt'
-bbox_file = '../Public_leaderboard_data/test1_bbox.txt'
 
 train_dataset = MedicalImageDataset(
     image_dir=train_image_dir, 
@@ -23,7 +20,7 @@ train_dataset = MedicalImageDataset(
     voxel_spacing_file=voxel_spacing_file, 
     transform=custom_transform
 )
-train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 
 val_dataset = MedicalImageDataset(
     image_dir=val_image_dir, 
@@ -31,134 +28,130 @@ val_dataset = MedicalImageDataset(
     voxel_spacing_file=voxel_spacing_file, 
     transform=custom_transform
 )
-val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
-
-# test_dataset = MedicalImageDataset(
-#     image_dir=test_image_dir, 
-#     label_dir=None, 
-#     voxel_spacing_file=voxel_spacing_file, 
-#     transform=custom_transform
-# )
-# test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
+
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 criterion = torch.nn.CrossEntropyLoss()
 
-def dice_score(pred, target, smooth=1e-6):
-    pred = (pred > 0).float()
-    target = (target > 0).float()
-    intersection = (pred * target).sum()
-    dice = (2. * intersection + smooth) / (pred.sum() + target.sum() + smooth)
-    return dice.item()
+checkpoint_dir = 'checkpoints'
+os.makedirs(checkpoint_dir, exist_ok=True)
 
-def compute_surface_distances(pred, target, spacing):
+def compute_dice(pred, target, smooth=1e-6):
+    # pred_flat = pred.flatten()
+    # target_flat = target.flatten()
+    pred_flat = (pred > 0.5).astype(np.uint8).flatten()  # Ensure binary mask
+    target_flat = (target > 0.5).astype(np.uint8).flatten()  
+    intersection = np.sum(pred_flat * target_flat)
+    dice = (2. * intersection + smooth) / (np.sum(pred_flat) + np.sum(target_flat) + smooth)
+    return dice
+
+def compute_nsd(pred, target, spacing, tolerance=1.0):
     pred_surface = np.logical_xor(pred, ndimage.binary_erosion(pred))
     target_surface = np.logical_xor(target, ndimage.binary_erosion(target))
-    distances_target_to_pred = ndimage.distance_transform_edt(~target_surface, sampling=spacing)
-    distances_pred_to_target = ndimage.distance_transform_edt(~pred_surface, sampling=spacing)
-    return distances_target_to_pred[pred_surface], distances_target_to_pred[target_surface]
+    
+    spacing_2d = spacing[:2] if len(spacing) > 2 else spacing
 
-def normalized_surface_dice(pred, target, spacing, tolerance=1.0):
-    distances_pred_to_target, distances_target_to_pred = compute_surface_distances(pred, target, spacing)
+    distances_target_to_pred = ndimage.distance_transform_edt(~target_surface, sampling=spacing_2d)
+    distances_pred_to_target = ndimage.distance_transform_edt(~pred_surface, sampling=spacing_2d)
+
     num_surface_points_pred = distances_pred_to_target.size
     num_surface_points_target = distances_target_to_pred.size
     num_within_tolerance_pred = np.sum(distances_pred_to_target <= tolerance)
     num_within_tolerance_target = np.sum(distances_target_to_pred <= tolerance)
+
     nsd = (num_within_tolerance_pred + num_within_tolerance_target) / (num_surface_points_pred + num_surface_points_target)
     return nsd
 
-def train_model(model, train_loader, val_loader, epochs, model_path='unet_model.pth'):
+def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_model.pth'):
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
+
         for batch in train_loader:
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
 
-            num_slices = images.shape[-1]
-            batch_loss = 0.0
-
-            for slice_idx in range(num_slices):
-                image_slice = images[:, :, :, :, slice_idx]
-                label_slice = labels[:, :, :, slice_idx]
-
-                outputs = model(image_slice)
-                loss = criterion(outputs, label_slice)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                batch_loss += loss.item()
-
-            running_loss += batch_loss / num_slices
-
-        val_loss = validate_model(model, val_loader)
-        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {running_loss:.4f}, Val Loss: {val_loss:.4f}")
-        checkpoint_path = f'unet_model_epoch_{epoch+1}.pth'
-        torch.save(model.state_dict(), checkpoint_path)
-        print(f"Checkpoint saved to {checkpoint_path}")
-
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
-
-
-
-def validate_model(model, val_loader):
-    model.eval()
-    val_loss = 0.0
-    with torch.no_grad():
-        for images, labels in val_loader:
-            images = images.to(device)
-            labels = labels.to(device)
             outputs = model(images)
             loss = criterion(outputs, labels)
-            val_loss += loss.item()
-    return val_loss / len(val_loader)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            running_loss += loss.item()
 
-def generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir):
+        avg_train_loss = running_loss / len(train_loader)
+
+        avg_val_loss, avg_dsc, avg_nsd = validate_model(model, val_loader)
+
+        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, DSC: {avg_dsc:.4f}, NSD: {avg_nsd:.4f}")
+
+        # checkpoint_path = os.path.join(checkpoint_dir, f'unet_model_epoch_{epoch+1}.pth')
+        # torch.save(model.state_dict(), checkpoint_path)
+        # print(f"Checkpoint saved to {checkpoint_path}")
+
+    torch.save(model.state_dict(), model_path)
+    print(f"Final model saved to {model_path}")
+
+def validate_model(model, val_loader, save_images=True, save_dir='validation_samples'):
     model.eval()
-    os.makedirs(output_dir, exist_ok=True)
+    val_loss = 0.0
+    dsc_scores = []
+    nsd_scores = []
 
-    bbox_data = {}
-    with open(bbox_file, 'r') as f:
-        for line in f:
-            parts = line.strip().split(': ')
-            key = tuple(map(int, parts[0].strip('<>').split(', ')))
-            bbox = list(map(int, parts[1].strip('[]').split(', ')))
-            bbox_data[key] = bbox
+    print("here")
+    if save_images:
+        # print("Save images folder")
+        # print(save_images)
+        os.makedirs(save_dir, exist_ok=True)
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch_idx, batch in enumerate(val_loader):
             images = batch['images'].to(device)
-            ct_id = batch['ct_id']
-            num_slices = images.shape[-1]
+            labels = batch['labels'].to(device)
+            outputs = model(images)
 
-            for slice_idx in range(num_slices):
-                for organ in range(1, 13):
-                    bbox_key = (int(ct_id[0]), slice_idx + 1, organ)
-                    if bbox_key in bbox_data:
-                        xmin, ymin, xmax, ymax = bbox_data[bbox_key]
-                        cropped_image = images[0, 0, ymin:ymax, xmin:xmax].unsqueeze(0).unsqueeze(0)
-                        cropped_output = model(cropped_image)
-                        pred_crop = torch.argmax(cropped_output, dim=1)[0].cpu().numpy()
+            loss = criterion(outputs, labels)
+            val_loss += loss.item()
 
-                        pred_slice = np.zeros((512, 512), dtype=np.uint8)
-                        pred_slice[ymin:ymax, xmin:xmax] = pred_crop
+            preds = torch.argmax(outputs, dim=1).cpu().numpy()
+            labels = labels.cpu().numpy()
 
-                        ct_folder = os.path.join(output_dir, f'{ct_id[0]:02d}')
-                        os.makedirs(ct_folder, exist_ok=True)
-                        slice_filename = os.path.join(ct_folder, f'{slice_idx+1}.png')
-                        Image.fromarray(pred_slice).save(slice_filename)
+            for i in range(preds.shape[0]):
+                pred = preds[i]
+                target = labels[i]
 
-def zip_results(output_dir, zip_filename):
-    shutil.make_archive(zip_filename, 'zip', output_dir)
+                if 'voxel_spacing' in batch and len(batch['voxel_spacing']) > i:
+                    spacing = batch['voxel_spacing'][i][:2]
+                else:
+                    spacing = (1.0, 1.0)
 
-train_model(model, train_loader, val_loader, epochs=50, model_path='final_unet_model.pth')
+                dsc = compute_dice(pred, target)
+                dsc_scores.append(dsc)
 
-# output_dir = 'test_labels'
-# generate_test_predictions_with_bbox(model, test_loader, bbox_file, output_dir)
+                nsd = compute_nsd(pred, target, spacing, tolerance=2.0)  # Adjusted tolerance
+                nsd_scores.append(nsd)
 
-# zip_filename = 'test_labels'
-# zip_results(output_dir, zip_filename)
-# print(f"Results zipped to {zip_filename}.zip")
+                # if save_images and batch_idx < 5 and i < 5:
+                #     # print(save_images)
+                #     # print(batch_idx)
+                #     # print(i)
+                #     # pred_img = (pred * 255 / (pred.max() if pred.max() > 0 else 1)).astype(np.uint8)
+                #     # target_img = (target * 255 / (target.max() if target.max() > 0 else 1)).astype(np.uint8)
+
+                #     pred_img = (pred * 255).astype(np.uint8)
+                #     target_img = (target * 255).astype(np.uint8)
+
+                #     Image.fromarray(pred_img).save(os.path.join(save_dir, f'pred_batch{batch_idx}_img{i}.png'))
+                #     Image.fromarray(target_img).save(os.path.join(save_dir, f'gt_batch{batch_idx}_img{i}.png'))
+
+    avg_val_loss = val_loss / len(val_loader)
+    avg_dsc = np.mean(dsc_scores) if dsc_scores else 0
+    avg_nsd = np.mean(nsd_scores) if nsd_scores else 0
+
+    return avg_val_loss, avg_dsc, avg_nsd
+
+
+
+train_model(model, train_loader, val_loader, epochs=10, model_path='final_unet_model_ep10.pth')

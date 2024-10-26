@@ -5,12 +5,27 @@ from PIL import Image
 import numpy as np
 
 class MedicalImageDataset(Dataset):
-    def __init__(self, image_dir, label_dir, voxel_spacing_file, transform=None):
+    def __init__(self, image_dir, label_dir=None, voxel_spacing_file=None, transform=None):
         self.image_dir = image_dir
         self.label_dir = label_dir
         self.transform = transform
-        self.voxel_spacings = self.load_voxel_spacings(voxel_spacing_file)
-        self.ct_scans = os.listdir(self.image_dir)
+        self.voxel_spacings = self.load_voxel_spacings(voxel_spacing_file) if voxel_spacing_file else None
+
+        # Collect all 2D slices from image directories
+        self.image_slices = []
+        self.label_slices = []
+        
+        for ct_scan_id in sorted(os.listdir(self.image_dir)):
+            image_folder = os.path.join(self.image_dir, ct_scan_id)
+            if not os.path.isdir(image_folder):
+                continue
+            images = [os.path.join(image_folder, f) for f in sorted(os.listdir(image_folder)) if not f.startswith('.')]
+            self.image_slices.extend(images)
+
+            if self.label_dir:
+                label_folder = os.path.join(self.label_dir, ct_scan_id)
+                labels = [os.path.join(label_folder, f) for f in sorted(os.listdir(label_folder)) if not f.startswith('.')]
+                self.label_slices.extend(labels)
 
     def load_voxel_spacings(self, voxel_spacing_file):
         voxel_spacings = {}
@@ -21,45 +36,37 @@ class MedicalImageDataset(Dataset):
                 voxel_spacings[ct_id] = (x_spacing, y_spacing, z_spacing)
         return voxel_spacings
 
-
     def __len__(self):
-        return len(self.ct_scans)
+        return len(self.image_slices)
 
     def __getitem__(self, idx):
-        ct_scan_id = self.ct_scans[idx]
-        image_folder = os.path.join(self.image_dir, ct_scan_id)
-        label_folder = os.path.join(self.label_dir, ct_scan_id)
-
-        image_slices = [f for f in sorted(os.listdir(image_folder)) if not f.startswith('.')]
-        label_slices = [f for f in sorted(os.listdir(label_folder)) if not f.startswith('.')]
-
-        images = []
-        labels = []
-
-        for image_slice, label_slice in zip(image_slices, label_slices):
-            image_path = os.path.join(image_folder, image_slice)
-            label_path = os.path.join(label_folder, label_slice)
-
-            if os.path.isfile(image_path) and os.path.isfile(label_path):
-                image = Image.open(image_path).convert("L")
-                label = Image.open(label_path)
-                images.append(np.array(image))
-                labels.append(np.array(label))
-
-        images = np.stack(images, axis=-1)
-        labels = np.stack(labels, axis=-1)
-        voxel_spacing = self.voxel_spacings[ct_scan_id]
+        image_path = self.image_slices[idx]
+        image = Image.open(image_path).convert("L")
+        #image = np.array(image)
+        image = np.array(image) / 255.0  # Normalize image to 0-1 range
+        
+        label = None
+        if self.label_dir:
+            label_path = self.label_slices[idx]
+            label = Image.open(label_path)
+            label = np.array(label)
 
         if self.transform:
-            images = self.transform(images)
-            labels = self.transform(labels)
+            image = self.transform(image)
+            if label is not None:
+                label = self.transform(label)
 
-        images = torch.tensor(images, dtype=torch.float32).unsqueeze(0)
-        labels = torch.tensor(labels, dtype=torch.long)
+        image = torch.tensor(image, dtype=torch.float32).unsqueeze(0)  # [1, height, width]
+        if label is not None:
+            label = torch.tensor(label, dtype=torch.long)
 
-        sample = {'images': images, 'labels': labels, 'voxel_spacing': voxel_spacing}
+        ct_scan_id = os.path.basename(os.path.dirname(image_path))
+        voxel_spacing = self.voxel_spacings[ct_scan_id] if self.voxel_spacings else None
+
+        sample = {'images': image, 'labels': label, 'voxel_spacing': voxel_spacing}
         return sample
 
 
 def custom_transform(image):
-    return image / 255.0
+    #return image / 255.0
+    return image

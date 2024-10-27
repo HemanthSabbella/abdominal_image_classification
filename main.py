@@ -32,6 +32,21 @@ class DiceLoss(torch.nn.Module):
 
         return dice_loss
 
+class WeightedCELossAndDiceLoss(nn.Module):
+    def __init__(self, weight_ce=0.5, weight_dice=0.5):
+        super(WeightedCELossAndDiceLoss, self).__init__()
+        self.weight_ce = weight_ce
+        self.weight_dice = weight_dice
+        self.ce_loss = nn.CrossEntropyLoss()
+        self.dice_loss = DiceLoss()
+
+    def forward(self, pred, target):
+        ce = self.ce_loss(pred, target)
+        dice = self.dice_loss(pred, target)
+        combined_loss = self.weight_ce * ce + self.weight_dice * dice
+        return combined_loss
+
+
 train_image_dir = '../Public_leaderboard_data/train_images'
 train_label_dir = '../Public_leaderboard_data/train_labels'
 val_image_dir = '../Public_leaderboard_data/val_images'
@@ -58,8 +73,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
-criterion = torch.nn.CrossEntropyLoss()
+# criterion = torch.nn.CrossEntropyLoss()
 # criterion = DiceLoss()
+criterion = WeightedCELossAndDiceLoss(weight_ce=0.5, weight_dice=0.5)
+
 
 checkpoint_dir = 'checkpoints'
 os.makedirs(checkpoint_dir, exist_ok=True)
@@ -198,4 +215,4 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
 
 
 
-train_model(model, train_loader, val_loader, epochs=10, model_path='final_unet_model_ep10.pth')
+train_model(model, train_loader, val_loader, epochs=10, model_path='final_unet_model_ep10_weightedloss.pth')

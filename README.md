@@ -1,4 +1,4 @@
-# CS701_G8
+# Medical Image Segmentation: Project
 Code base for the Medical Image Segmentation on 12 abdominal organs. U-net model is been trained and got DSC: 0.64 and NSC: 0.5176
 
 <h2>Optimizations</h2> 

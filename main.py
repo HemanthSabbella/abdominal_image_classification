@@ -1,4 +1,6 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import numpy as np
@@ -7,6 +9,28 @@ import os
 from model import UNet
 from dataloader import MedicalImageDataset, custom_transform
 from PIL import Image
+
+class DiceLoss(torch.nn.Module):
+    def __init__(self, smooth=1.0):
+        super(DiceLoss, self).__init__()
+        self.smooth = smooth
+
+    def forward(self, pred, target):
+        # Convert target to one-hot encoding
+        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2).float()
+        
+        # Apply softmax to the predictions if not already applied
+        pred = F.softmax(pred, dim=1)
+        
+        # Compute intersection and union for each class
+        intersection = torch.sum(pred * target_one_hot, dim=(2, 3))
+        union = torch.sum(pred, dim=(2, 3)) + torch.sum(target_one_hot, dim=(2, 3))
+        
+        # Calculate Dice Score for each class and average over batch and classes
+        dice_score = (2 * intersection + self.smooth) / (union + self.smooth)
+        dice_loss = 1 - dice_score.mean()
+
+        return dice_loss
 
 train_image_dir = '../Public_leaderboard_data/train_images'
 train_label_dir = '../Public_leaderboard_data/train_labels'
@@ -35,6 +59,7 @@ model = UNet(in_channels=1, out_channels=13).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
 criterion = torch.nn.CrossEntropyLoss()
+# criterion = DiceLoss()
 
 checkpoint_dir = 'checkpoints'
 os.makedirs(checkpoint_dir, exist_ok=True)
@@ -51,19 +76,38 @@ def compute_dice(pred, target, smooth=1e-6):
 def compute_nsd(pred, target, spacing, tolerance=1.0):
     pred_surface = np.logical_xor(pred, ndimage.binary_erosion(pred))
     target_surface = np.logical_xor(target, ndimage.binary_erosion(target))
-    
-    spacing_2d = spacing[:2] if len(spacing) > 2 else spacing
 
-    distances_target_to_pred = ndimage.distance_transform_edt(~target_surface, sampling=spacing_2d)
-    distances_pred_to_target = ndimage.distance_transform_edt(~pred_surface, sampling=spacing_2d)
+    # Compute distance transforms
+    pred_distances = ndimage.distance_transform_edt(~pred_surface, sampling=spacing)
+    target_distances = ndimage.distance_transform_edt(~target_surface, sampling=spacing)
 
-    num_surface_points_pred = distances_pred_to_target.size
-    num_surface_points_target = distances_target_to_pred.size
-    num_within_tolerance_pred = np.sum(distances_pred_to_target <= tolerance)
-    num_within_tolerance_target = np.sum(distances_target_to_pred <= tolerance)
+    pred_to_target_distance = pred_distances[target_surface]
+    target_to_pred_distance = target_distances[pred_surface]
 
-    nsd = (num_within_tolerance_pred + num_within_tolerance_target) / (num_surface_points_pred + num_surface_points_target)
+    within_tolerance_pred = np.sum(pred_to_target_distance <= tolerance)
+    within_tolerance_target = np.sum(target_to_pred_distance <= tolerance)
+
+    total_surface_points = np.sum(pred_surface) + np.sum(target_surface)
+    nsd = (within_tolerance_pred + within_tolerance_target) / total_surface_points
+
     return nsd
+
+# def compute_nsd(pred, target, spacing, tolerance=1.0):
+#     pred_surface = np.logical_xor(pred, ndimage.binary_erosion(pred))
+#     target_surface = np.logical_xor(target, ndimage.binary_erosion(target))
+    
+#     spacing_2d = spacing[:2] if len(spacing) > 2 else spacing
+
+#     distances_target_to_pred = ndimage.distance_transform_edt(~target_surface, sampling=spacing_2d)
+#     distances_pred_to_target = ndimage.distance_transform_edt(~pred_surface, sampling=spacing_2d)
+
+#     num_surface_points_pred = distances_pred_to_target.size
+#     num_surface_points_target = distances_target_to_pred.size
+#     num_within_tolerance_pred = np.sum(distances_pred_to_target <= tolerance)
+#     num_within_tolerance_target = np.sum(distances_target_to_pred <= tolerance)
+
+#     nsd = (num_within_tolerance_pred + num_within_tolerance_target) / (num_surface_points_pred + num_surface_points_target)
+#     return nsd
 
 def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_model.pth'):
     for epoch in range(epochs):

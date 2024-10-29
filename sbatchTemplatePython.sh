@@ -50,4 +50,4 @@ source ~/myenv/bin/activate
 # pip3 install numpy
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/
+srun --gres=gpu:1 python /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/main.py

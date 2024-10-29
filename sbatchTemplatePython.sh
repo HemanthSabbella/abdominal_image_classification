@@ -37,7 +37,6 @@
 # Refer to https://violet.smu.edu.sg/origami/module/ for more information
 module purge
 module load Python/3.7.12 
-module load CUDA/11.3.1
 
 # Create a virtual environment
 python3 -m venv ~/myenv
@@ -48,6 +47,7 @@ source ~/myenv/bin/activate
 
 # If you require any packages, install it as usual before the srun job submission.
 # pip3 install numpy
+pip3 install torch
 
 # Submit your job to the cluster
 srun --gres=gpu:1 python3 /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/main.py

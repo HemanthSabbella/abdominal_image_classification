@@ -121,16 +121,19 @@ def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
 
+            # Forward pass
             # outputs = model(images)
             outputs, aux_output = model(images)
             # loss = criterion(outputs, labels)
 
-            # Calculate main and auxiliary losses
+            # Calculate main loss
             loss_main = criterion_main(outputs, labels)
             
+            # Calculate Auxiliary losses
             # upsample aux_output to ensure it is same dim as labels
             aux_output_upsampled = F.interpolate(aux_output, size=(512, 512), mode='bilinear', align_corners=False)
             loss_aux = criterion_aux(aux_output_upsampled, labels)  # Using the same labels for auxiliary
+            
             loss = loss_main + 0.3 * loss_aux  # Combine losses (you can adjust the weight)
             
             optimizer.zero_grad()
@@ -172,7 +175,7 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
         for batch_idx, batch in enumerate(val_loader):
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
-            outputs = model(images)
+            outputs, aux_output = model(images)
 
             # loss = criterion(outputs, labels)
             # val_loss += loss.item()

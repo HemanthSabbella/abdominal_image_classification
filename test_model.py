@@ -64,6 +64,7 @@ def main():
     # test_dataset = MedicalTestDataset('Public_leaderboard_data/test1_images')
     test_dataset = MedicalTestDataset('../Public_leaderboard_data/test1_images', bbox_file='../Public_leaderboard_data/test1_bbox.txt')
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
+    print("test data loaded..")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = UNet(in_channels=1, out_channels=13).to(device)
@@ -92,7 +93,9 @@ def main():
 
             ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
             os.makedirs(ct_folder, exist_ok=True)
+            
             print(f"Saving predicted images to: {ct_folder}")
+
             slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
             Image.fromarray(pred_mask).save(slice_filename)
 

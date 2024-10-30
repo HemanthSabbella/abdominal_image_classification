@@ -41,7 +41,7 @@ class MedicalTestDataset(Dataset):
         bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
         
         if bbox is None:
-            return None  # Skip this sample if bbox is None
+            raise ValueError(f"Bounding box not found for CT scan ID: {ct_scan_id}, Index: {idx}")
         
         sample = {'images': image, 'bbox': bbox}
         return sample
@@ -53,10 +53,14 @@ def crop_to_bbox(image, bbox):
         return image[:, y_min:y_max, x_min:x_max]
     return image
 
+def custom_collate_fn(batch):
+    batch = list(filter(lambda x: x is not None, batch))
+    return torch.utils.data.dataloader.default_collate(batch)
+
 
 # test_dataset = MedicalTestDataset('Public_leaderboard_data/test1_images')
 test_dataset = MedicalTestDataset('../Public_leaderboard_data/test1_images', bbox_file='../Public_leaderboard_data/test1_bbox.txt')
-test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)

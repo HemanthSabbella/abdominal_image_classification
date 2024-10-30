@@ -57,7 +57,7 @@ test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
-model.load_state_dict(torch.load('final_unet_model_ep9.pth', map_location=device))
+model.load_state_dict(torch.load('final_unet_model_ep10.pth', map_location=device))
 model.eval()
 
 with torch.no_grad():

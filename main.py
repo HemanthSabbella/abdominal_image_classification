@@ -181,7 +181,7 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
             # val_loss += loss.item()
             loss_main = criterion_main(outputs, labels)
             aux_output_upsampled = F.interpolate(aux_output, size=(512, 512), mode='bilinear', align_corners=False)
-            loss_aux = criterion_aux(aux_output, labels)  # Calculate auxiliary loss
+            loss_aux = criterion_aux(aux_output_upsampled, labels)  # Calculate auxiliary loss
             val_loss += (loss_main + loss_aux).item()  # Combine validation loss
 
             preds = torch.argmax(outputs, dim=1).cpu().numpy()

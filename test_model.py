@@ -90,7 +90,7 @@ with torch.no_grad():
         slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
 
         # Specify the new directory for test_labels
-        base_output_dir = '../Public_leaderboard_data/test_labels'
+        base_output_dir = '/common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/Public_leaderboard_data/test_labels'
         ct_folder = os.path.join(base_output_dir, f'{ct_scan_id}')
         os.makedirs(ct_folder, exist_ok=True)
         print(f"Saving predicted images to: {ct_folder}")

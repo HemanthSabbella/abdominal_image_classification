@@ -46,7 +46,6 @@ class MedicalTestDataset(Dataset):
         sample = {'images': image, 'bbox': bbox}
         return sample
 
-
 def crop_to_bbox(image, bbox):
     if bbox is not None:
         x_min, y_min, x_max, y_max = bbox
@@ -60,45 +59,40 @@ def custom_collate_fn(batch):
     return torch.utils.data.dataloader.default_collate(batch)
 
 
-def main():
-    # test_dataset = MedicalTestDataset('Public_leaderboard_data/test1_images')
-    test_dataset = MedicalTestDataset('../Public_leaderboard_data/test1_images', bbox_file='../Public_leaderboard_data/test1_bbox.txt')
-    test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
-    print("test data loaded..")
+# test_dataset = MedicalTestDataset('Public_leaderboard_data/test1_images')
+test_dataset = MedicalTestDataset('../Public_leaderboard_data/test1_images', bbox_file='../Public_leaderboard_data/test1_bbox.txt')
+test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, collate_fn=custom_collate_fn)
+print("test data loaded..")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = UNet(in_channels=1, out_channels=13).to(device)
-    model.load_state_dict(torch.load('final_unet_model_ep10.pth', map_location=device))
-    model.eval()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = UNet(in_channels=1, out_channels=13).to(device)
+model.load_state_dict(torch.load('final_unet_model_ep10.pth', map_location=device))
+model.eval()
 
-    with torch.no_grad():
-        for batch_idx, batch in enumerate(test_loader):
-            if batch is None:
-                continue  # Skip empty batches
+with torch.no_grad():
+    for batch_idx, batch in enumerate(test_loader):
+        if batch is None:
+            continue  # Skip empty batches
 
-            images = batch['images'].to(device)
-            bboxes = batch['bbox']
-            
-            # Crop images to bounding boxes
-            images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
+        images = batch['images'].to(device)
+        bboxes = batch['bbox']
+        
+        # Crop images to bounding boxes
+        images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
 
-            # Get both outputs but only use the main output for predictions
-            # outputs = model(images)
-            outputs, aux_output = model(images)  # Get both main and auxiliary outputs
-            preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
-            pred_mask = preds.astype(np.uint8)
+        # Get both outputs but only use the main output for predictions
+        # outputs = model(images)
+        outputs, aux_output = model(images)  # Get both main and auxiliary outputs
+        preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
+        pred_mask = preds.astype(np.uint8)
 
-            ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
-            slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
+        ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
+        slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
 
-            ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
-            os.makedirs(ct_folder, exist_ok=True)
-            
-            print(f"Saving predicted images to: {ct_folder}")
+        ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
+        os.makedirs(ct_folder, exist_ok=True)
 
-            slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
-            Image.fromarray(pred_mask).save(slice_filename)
+        print(f"Saving predicted images to: {ct_folder}")
 
-
-if __name__ == "__main__":
-    main()
+        slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
+        Image.fromarray(pred_mask).save(slice_filename)

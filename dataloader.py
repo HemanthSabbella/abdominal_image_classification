@@ -37,6 +37,16 @@ class MedicalImageDataset(Dataset):
                 voxel_spacings[ct_id] = (x_spacing, y_spacing, z_spacing)
         return voxel_spacings
 
+    def load_bboxes(self, bbox_file):
+        bboxes = {}
+        with open(bbox_file, 'r') as f:
+            for line in f:
+                key, bbox_str = line.strip().split(': ')
+                bbox = list(map(int, bbox_str.strip('[]').split(', ')))
+                bboxes[key] = bbox
+        return bboxes
+    
+    
     def __len__(self):
         return len(self.image_slices)
 
@@ -65,17 +75,8 @@ class MedicalImageDataset(Dataset):
         voxel_spacing = self.voxel_spacings[ct_scan_id] if self.voxel_spacings else None
         bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
 
-        sample = {'images': image, 'labels': label, 'voxel_spacing': voxel_spacing}
+        sample = {'images': image, 'labels': label, 'voxel_spacing': voxel_spacing, 'bbox': bbox}
         return sample
-    
-    def load_bboxes(self, bbox_file):
-        bboxes = {}
-        with open(bbox_file, 'r') as f:
-            for line in f:
-                key, bbox_str = line.strip().split(': ')
-                bbox = list(map(int, bbox_str.strip('[]').split(', ')))
-                bboxes[key] = bbox
-        return bboxes
 
 
 def custom_transform(image):

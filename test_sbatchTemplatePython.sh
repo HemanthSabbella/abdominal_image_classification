@@ -27,7 +27,7 @@
 #SBATCH --partition=project                 # The partition you've been assigned
 #SBATCH --account=cs701   # The account you've been assigned (normally student)
 #SBATCH --qos=cs701qos       # What is the QOS assigned to you? Check with myinfo command
-#SBATCH --mail-user=adam.ho.2020@scis.smu.edu.sg,my.wang.2024@msc.smu.edu.sg
+#SBATCH --mail-user= my.wang.2024@msc.smu.edu.sg
 #SBATCH --job-name=cs701Job     # Give the job a name
 
 #################################################
@@ -55,7 +55,7 @@ pip3 install numpy
 pip3 install torch
 pip3 install scipy
 pip3 install pillow
-pip install scikit-image
+pip3 install scikit-image
 
 # Submit your job to the cluster
 srun --gres=gpu:1 python3 /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/test_model.py

@@ -71,28 +71,31 @@ model.eval()
 
 with torch.no_grad():
     for batch_idx, batch in enumerate(test_loader):
-        if batch is None:
-            continue  # Skip empty batches
+        try:
+            print(f"Processing batch {batch_idx + 1}/{len(test_loader)}")
+            if batch is None:
+                continue  # Skip empty batches
 
-        images = batch['images'].to(device)
-        bboxes = batch['bbox']
-        
-        # Crop images to bounding boxes
-        images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
+            images = batch['images'].to(device)
+            bboxes = batch['bbox']
+            
+            # Crop images to bounding boxes
+            images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
 
-        # Get both outputs but only use the main output for predictions
-        # outputs = model(images)
-        outputs, aux_output = model(images)  # Get both main and auxiliary outputs
-        preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
-        pred_mask = preds.astype(np.uint8)
+            # Get both outputs but only use the main output for predictions
+            outputs, aux_output = model(images)  # Get both main and auxiliary outputs
+            preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
+            pred_mask = preds.astype(np.uint8)
 
-        ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
-        slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
+            ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
+            slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
 
-        ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
-        os.makedirs(ct_folder, exist_ok=True)
+            ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
+            os.makedirs(ct_folder, exist_ok=True)
 
-        print(f"Saving predicted images to: {ct_folder}")
+            print(f"Saving predicted images to: {ct_folder}")
 
-        slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
-        Image.fromarray(pred_mask).save(slice_filename)
+            slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
+            Image.fromarray(pred_mask).save(slice_filename)
+        except Exception as e:
+            print(f"Error processing batch {batch_idx + 1}: {e}")

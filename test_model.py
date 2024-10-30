@@ -74,6 +74,7 @@ with torch.no_grad():
         try:
             print(f"Processing batch {batch_idx + 1}/{len(test_loader)}")
             if batch is None:
+                print("batch is none")
                 continue  # Skip empty batches
 
             images = batch['images'].to(device)
@@ -86,6 +87,7 @@ with torch.no_grad():
             outputs, aux_output = model(images)  # Get both main and auxiliary outputs
             preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
             pred_mask = preds.astype(np.uint8)
+            print(f"pred_mask shape: {pred_mask.shape}, dtype: {pred_mask.dtype}")
 
             ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
             slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
@@ -94,8 +96,11 @@ with torch.no_grad():
             os.makedirs(ct_folder, exist_ok=True)
 
             print(f"Saving predicted images to: {ct_folder}")
-
             slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
+
+            print(f"Saving image to: {slice_filename}")
             Image.fromarray(pred_mask).save(slice_filename)
+            print(f"Image saved to: {slice_filename}")
+
         except Exception as e:
             print(f"Error processing batch {batch_idx + 1}: {e}")

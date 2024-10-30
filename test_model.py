@@ -41,13 +41,15 @@ model.eval()
 with torch.no_grad():
     for batch_idx, batch in enumerate(test_loader):
         images = batch['images'].to(device)
-        outputs = model(images)
+        
+        # Get both outputs but only use the main output for predictions
+        # outputs = model(images)
+        outputs, aux_output = model(images)  # Get both main and auxiliary outputs
         preds = torch.argmax(outputs, dim=1).cpu().numpy()[0]
         pred_mask = preds.astype(np.uint8)
 
         ct_scan_id = os.path.basename(os.path.dirname(test_dataset.image_slices[batch_idx]))
         slice_idx = int(os.path.basename(test_dataset.image_slices[batch_idx]).split('.')[0])
-
 
         ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
         os.makedirs(ct_folder, exist_ok=True)

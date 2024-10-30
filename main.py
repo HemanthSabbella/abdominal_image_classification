@@ -1,4 +1,3 @@
-# test
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -59,7 +58,9 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=1e-4)
-criterion = torch.nn.CrossEntropyLoss()
+# criterion = torch.nn.CrossEntropyLoss()
+criterion_main = torch.nn.CrossEntropyLoss()  # For main output
+criterion_aux = torch.nn.CrossEntropyLoss()   # For auxiliary output
 # criterion = DiceLoss()
 
 checkpoint_dir = 'checkpoints'
@@ -114,23 +115,36 @@ def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_
     for epoch in range(epochs):
         model.train()
         running_loss = 0.0
+        running_aux_loss = 0.0  # To keep track of auxiliary loss
 
         for batch in train_loader:
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
 
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+            # outputs = model(images)
+            outputs, aux_output = model(images)
+            # loss = criterion(outputs, labels)
+
+            # Calculate main and auxiliary losses
+            loss_main = criterion_main(outputs, labels)
+            loss_aux = criterion_aux(aux_output, labels)  # Using the same labels for auxiliary
+            loss = loss_main + 0.3 * loss_aux  # Combine losses (you can adjust the weight)
+            
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
+            # running_loss += loss.item()
+            running_loss += loss_main.item()
+            running_aux_loss += loss_aux.item() 
 
         avg_train_loss = running_loss / len(train_loader)
+        avg_aux_loss = running_aux_loss / len(train_loader) # Average auxiliary loss
+        avg_combined_loss = (running_loss + running_aux_loss) / (len(train_loader) * 2)
+
 
         avg_val_loss, avg_dsc, avg_nsd = validate_model(model, val_loader)
 
-        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, DSC: {avg_dsc:.4f}, NSD: {avg_nsd:.4f}")
+        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, DSC: {avg_dsc:.4f}, NSD: {avg_nsd:.4f}, Auxiliary Loss: {avg_aux_loss:.4f}, Combined Loss: {avg_combined_loss:.4f}")
 
         # checkpoint_path = os.path.join(checkpoint_dir, f'unet_model_epoch_{epoch+1}.pth')
         # torch.save(model.state_dict(), checkpoint_path)
@@ -157,8 +171,11 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
             labels = batch['labels'].to(device)
             outputs = model(images)
 
-            loss = criterion(outputs, labels)
-            val_loss += loss.item()
+            # loss = criterion(outputs, labels)
+            # val_loss += loss.item()
+            loss_main = criterion_main(outputs, labels)
+            loss_aux = criterion_aux(aux_output, labels)  # Calculate auxiliary loss
+            val_loss += (loss_main + loss_aux).item()  # Combine validation loss
 
             preds = torch.argmax(outputs, dim=1).cpu().numpy()
             labels = labels.cpu().numpy()

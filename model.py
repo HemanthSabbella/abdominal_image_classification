@@ -37,6 +37,9 @@ class UNet(nn.Module):
         self.upconv3 = upconv_block(512, 256)
         self.conv_up3 = conv_block(512, 256)
 
+        # Define the auxiliary output layer here
+        self.auxiliary_conv = nn.Conv2d(256, out_channels, kernel_size=1)  # Auxiliary output
+
         self.upconv2 = upconv_block(256, 128)
         self.conv_up2 = conv_block(256, 128)
 
@@ -64,6 +67,9 @@ class UNet(nn.Module):
         u3 = torch.cat([u3, c3], dim=1)
         u3 = self.conv_up3(u3)
 
+        # Generate auxiliary output
+        aux_output = self.auxiliary_conv(u3)  # Auxiliary output after upsampling
+
         u2 = self.upconv2(u3)
         u2 = torch.cat([u2, c2], dim=1)
         u2 = self.conv_up2(u2)
@@ -73,4 +79,4 @@ class UNet(nn.Module):
         u1 = self.conv_up1(u1)
 
         out = self.final_conv(u1)
-        return out
+        return out, aux_output # added output for axuiliary loss

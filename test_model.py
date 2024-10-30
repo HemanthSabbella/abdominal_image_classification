@@ -41,8 +41,8 @@ class MedicalTestDataset(Dataset):
         bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
         
         if bbox is None:
-            raise ValueError(f"Bounding box not found for CT scan ID: {ct_scan_id}, Index: {idx}")
-        
+            return None
+                
         sample = {'images': image, 'bbox': bbox}
         return sample
 

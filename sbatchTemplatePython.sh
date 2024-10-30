@@ -27,7 +27,7 @@
 #SBATCH --partition=project                 # The partition you've been assigned
 #SBATCH --account=cs701   # The account you've been assigned (normally student)
 #SBATCH --qos=cs701qos       # What is the QOS assigned to you? Check with myinfo command
-#SBATCH --mail-user=adam.ho.2020@scis.smu.edu.sg,my.wang.2024@msc.smu.edu.sg,zhe.li.2024@phdcs.smu.edu.sg,shrsabbella.2024@phdcs.smu.edu.sg # Who should receive the email notifications
+#SBATCH --mail-user=adam.ho.2020@scis.smu.edu.sg,my.wang.2024@msc.smu.edu.sg
 #SBATCH --job-name=cs701Job     # Give the job a name
 
 #################################################

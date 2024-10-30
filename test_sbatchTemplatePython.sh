@@ -58,4 +58,4 @@ pip3 install pillow
 pip3 install scikit-image
 
 # Submit your job to the cluster
-srun --gres=gpu:1 python3 /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/test_model.py
+srun --gres=gpu:1 python3 /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/test_model.py > /common/home/projectgrps/CS701/CS701G8/job_output.%j.out 2>&1

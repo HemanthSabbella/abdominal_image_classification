@@ -55,6 +55,8 @@ def crop_to_bbox(image, bbox):
 
 def custom_collate_fn(batch):
     batch = list(filter(lambda x: x is not None, batch))
+    if len(batch) == 0:
+        return None  # Return None if the batch is empty
     return torch.utils.data.dataloader.default_collate(batch)
 
 
@@ -69,6 +71,9 @@ model.eval()
 
 with torch.no_grad():
     for batch_idx, batch in enumerate(test_loader):
+        if batch is None:
+            continue  # Skip empty batches
+        
         images = batch['images'].to(device)
         bboxes = batch['bbox']
         

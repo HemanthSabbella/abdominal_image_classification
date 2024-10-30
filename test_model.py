@@ -73,7 +73,7 @@ with torch.no_grad():
     for batch_idx, batch in enumerate(test_loader):
         if batch is None:
             continue  # Skip empty batches
-        
+
         images = batch['images'].to(device)
         bboxes = batch['bbox']
         
@@ -91,5 +91,6 @@ with torch.no_grad():
 
         ct_folder = os.path.join('test_labels', f'{ct_scan_id}')
         os.makedirs(ct_folder, exist_ok=True)
+        print(f"Saving predicted images to: {ct_folder}")
         slice_filename = os.path.join(ct_folder, f'{slice_idx}.png')
         Image.fromarray(pred_mask).save(slice_filename)

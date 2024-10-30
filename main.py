@@ -7,7 +7,7 @@ import numpy as np
 from scipy import ndimage
 import os
 from model import UNet
-from dataloader import MedicalImageDataset, custom_transform
+from dataloader import MedicalImageDataset, custom_transform, custom_collate_fn
 from PIL import Image
 
 class DiceLoss(torch.nn.Module):
@@ -47,7 +47,7 @@ train_dataset = MedicalImageDataset(
     bbox_file=bbox_file,  
     transform=custom_transform
 )
-train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True, collate_fn=custom_collate_fn)
 
 val_dataset = MedicalImageDataset(
     image_dir=val_image_dir, 
@@ -56,7 +56,7 @@ val_dataset = MedicalImageDataset(
     bbox_file=bbox_file,  
     transform=custom_transform
 )
-val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
+val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False, collate_fn=custom_collate_fn)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = UNet(in_channels=1, out_channels=13).to(device)

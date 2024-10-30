@@ -76,7 +76,7 @@ class MedicalImageDataset(Dataset):
         bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
 
         if bbox is None:
-            return None  # Skip this sample if bbox is None
+            raise ValueError(f"Bounding box not found for {ct_scan_id}, {idx}")
 
         sample = {'images': image, 'labels': label, 'voxel_spacing': voxel_spacing, 'bbox': bbox}
         return sample

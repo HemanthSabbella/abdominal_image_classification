@@ -127,7 +127,10 @@ def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_
 
             # Calculate main and auxiliary losses
             loss_main = criterion_main(outputs, labels)
-            loss_aux = criterion_aux(aux_output, labels)  # Using the same labels for auxiliary
+            
+            # upsample aux_output to ensure it is same dim as labels
+            aux_output_upsampled = F.interpolate(aux_output, size=(512, 512), mode='bilinear', align_corners=False)
+            loss_aux = criterion_aux(aux_output_upsampled, labels)  # Using the same labels for auxiliary
             loss = loss_main + 0.3 * loss_aux  # Combine losses (you can adjust the weight)
             
             optimizer.zero_grad()

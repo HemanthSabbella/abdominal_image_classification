@@ -39,7 +39,10 @@ class MedicalTestDataset(Dataset):
 
         ct_scan_id = os.path.basename(os.path.dirname(image_path))
         bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
-
+        
+        if bbox is None:
+            return None  # Skip this sample if bbox is None
+        
         sample = {'images': image, 'bbox': bbox}
         return sample
 

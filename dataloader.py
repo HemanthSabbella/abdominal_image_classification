@@ -85,3 +85,8 @@ class MedicalImageDataset(Dataset):
 def custom_transform(image):
     #return image / 255.0
     return image
+
+
+def custom_collate_fn(batch):
+    batch = list(filter(lambda x: x is not None, batch))
+    return torch.utils.data.dataloader.default_collate(batch)

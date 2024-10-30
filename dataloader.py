@@ -5,7 +5,7 @@ from PIL import Image
 import numpy as np
 
 class MedicalImageDataset(Dataset):
-    def __init__(self, image_dir, label_dir=None, voxel_spacing_file=None, transform=None):
+    def __init__(self, image_dir, label_dir=None, voxel_spacing_file=None, bbox_file=None, transform=None):
         self.image_dir = image_dir
         self.label_dir = label_dir
         self.transform = transform
@@ -62,9 +62,19 @@ class MedicalImageDataset(Dataset):
 
         ct_scan_id = os.path.basename(os.path.dirname(image_path))
         voxel_spacing = self.voxel_spacings[ct_scan_id] if self.voxel_spacings else None
+        bbox = self.bboxes.get(f"{ct_scan_id}, {idx}", None) if self.bboxes else None
 
         sample = {'images': image, 'labels': label, 'voxel_spacing': voxel_spacing}
         return sample
+    
+    def load_bboxes(self, bbox_file):
+        bboxes = {}
+        with open(bbox_file, 'r') as f:
+            for line in f:
+                key, bbox_str = line.strip().split(': ')
+                bbox = list(map(int, bbox_str.strip('[]').split(', ')))
+                bboxes[key] = bbox
+        return bboxes
 
 
 def custom_transform(image):

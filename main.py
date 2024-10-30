@@ -37,11 +37,14 @@ train_label_dir = '../Public_leaderboard_data/train_labels'
 val_image_dir = '../Public_leaderboard_data/val_images'
 val_label_dir = '../Public_leaderboard_data/val_labels'
 voxel_spacing_file = '../Public_leaderboard_data/spacing_mm.txt'
+bbox_file = '../Public_leaderboard_data/test1_bbox.txt'
+
 
 train_dataset = MedicalImageDataset(
     image_dir=train_image_dir, 
     label_dir=train_label_dir, 
-    voxel_spacing_file=voxel_spacing_file, 
+    voxel_spacing_file=voxel_spacing_file,
+    bbox_file=bbox_file,  
     transform=custom_transform
 )
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
@@ -49,7 +52,8 @@ train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
 val_dataset = MedicalImageDataset(
     image_dir=val_image_dir, 
     label_dir=val_label_dir, 
-    voxel_spacing_file=voxel_spacing_file, 
+    voxel_spacing_file=voxel_spacing_file,
+    bbox_file=bbox_file,  
     transform=custom_transform
 )
 val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
@@ -111,6 +115,13 @@ def compute_nsd(pred, target, spacing, tolerance=1.0):
 #     nsd = (num_within_tolerance_pred + num_within_tolerance_target) / (num_surface_points_pred + num_surface_points_target)
 #     return nsd
 
+def crop_to_bbox(image, bbox):
+    if bbox is not None:
+        x_min, y_min, x_max, y_max = bbox
+        return image[:, y_min:y_max, x_min:x_max]
+    return image
+
+
 def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_model.pth'):
     for epoch in range(epochs):
         model.train()
@@ -120,6 +131,11 @@ def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_
         for batch in train_loader:
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
+            bboxes = batch['bbox']
+
+            # Crop images and labels to bounding boxes
+            images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
+            labels = torch.stack([crop_to_bbox(lbl, bbox) for lbl, bbox in zip(labels, bboxes)])
 
             # Forward pass
             # outputs = model(images)
@@ -175,8 +191,13 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
         for batch_idx, batch in enumerate(val_loader):
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
-            outputs, aux_output = model(images)
+            bboxes = batch['bbox']
+            
+            # Crop images and labels to bounding boxes
+            images = torch.stack([crop_to_bbox(img, bbox) for img, bbox in zip(images, bboxes)])
+            labels = torch.stack([crop_to_bbox(lbl, bbox) for lbl, bbox in zip(labels, bboxes)])
 
+            outputs, aux_output = model(images)
             # loss = criterion(outputs, labels)
             # val_loss += loss.item()
             loss_main = criterion_main(outputs, labels)
@@ -220,7 +241,6 @@ def validate_model(model, val_loader, save_images=True, save_dir='validation_sam
     avg_nsd = np.mean(nsd_scores) if nsd_scores else 0
 
     return avg_val_loss, avg_dsc, avg_nsd
-
 
 
 train_model(model, train_loader, val_loader, epochs=10, model_path='final_unet_model_ep10.pth')

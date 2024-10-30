@@ -10,6 +10,7 @@ class MedicalImageDataset(Dataset):
         self.label_dir = label_dir
         self.transform = transform
         self.voxel_spacings = self.load_voxel_spacings(voxel_spacing_file) if voxel_spacing_file else None
+        self.bboxes = self.load_bboxes(bbox_file) if bbox_file else None
 
         # Collect all 2D slices from image directories
         self.image_slices = []

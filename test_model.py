@@ -6,6 +6,7 @@ from model import UNet
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
+
 class MedicalTestDataset(Dataset):
     def __init__(self, image_dir):
         self.image_dir = image_dir

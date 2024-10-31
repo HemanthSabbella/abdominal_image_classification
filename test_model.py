@@ -31,7 +31,7 @@ class MedicalTestDataset(Dataset):
 
         return sample
 
-test_dataset = MedicalTestDataset('Public_leaderboard_data/test1_images')
+test_dataset = MedicalTestDataset('../Public_leaderboard_data/test1_images')
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

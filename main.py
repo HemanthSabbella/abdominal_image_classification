@@ -135,7 +135,7 @@ def train_model(model, train_loader, val_loader, epochs=10, checkpoint_dir='chec
             torch.save(model.state_dict(), best_model_path)
             print(f"Best model saved with Dice: {best_dice:.4f}")
 
-    final_model_path = os.path.join(checkpoint_dir, 'final_model.pth')
+    final_model_path = os.path.join(checkpoint_dir, 'final_model_adam1.pth')
     torch.save(model.state_dict(), final_model_path)
     print(f"Final model saved to {final_model_path}")
 

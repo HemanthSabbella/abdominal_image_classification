@@ -57,7 +57,7 @@ class MedicalImageDataset(SemanticSegmentationDataset):
             label = np.array(Image.open(self.label_paths[idx]), dtype=np.int64)
 
         # Apply augmentations if provided
-        if self.augmentations:
+        if True or self.augmentations:
             augmented = self.augmentations(image=image, mask=label)
             image = augmented['image']
             label = augmented['mask']

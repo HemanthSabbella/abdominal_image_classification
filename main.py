@@ -36,6 +36,18 @@ class MedicalImageDataset(SemanticSegmentationDataset):
         self.img_paths = self._get_all_images(image_dir)
         self.label_paths = self._get_all_images(label_dir) if label_dir else None
         self.num_classes = num_classes
+        # Set augmentations
+        # get augmentations from the augmentation pipeline
+        augmentations = A.Compose([
+            A.RandomRotate90(),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.5),
+            A.RandomResizedCrop(256, 256, scale=(0.8, 1.0)),
+            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5),
+            A.RandomBrightnessContrast(p=0.2),
+            A.Normalize(mean=(0.5,), std=(0.5,)),
+            ToTensorV2()
+        ])
         self.augmentations = augmentations
 
     def _get_all_images(self, root_dir):

@@ -10,44 +10,54 @@ import numpy as np
 from PIL import Image
 from torch.nn.functional import one_hot
 
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
+from torchvision import transforms
+
 # Set up device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Define augmentation pipeline
+augmentation_pipeline = A.Compose([
+    A.RandomRotate90(),               # Random rotations by 90 degrees
+    A.HorizontalFlip(p=0.5),          # 50% chance to horizontally flip the image
+    A.VerticalFlip(p=0.5),            # 50% chance to vertically flip the image
+    A.RandomResizedCrop(256, 256, scale=(0.8, 1.0)), # Random cropping
+    A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.1, rotate_limit=15, p=0.5),
+    A.RandomBrightnessContrast(p=0.2), # Adjust brightness/contrast
+    A.Normalize(mean=(0.5,), std=(0.5,)),  # Normalize the grayscale image
+    ToTensorV2()
+])
+
 # Define custom dataset
 class MedicalImageDataset(SemanticSegmentationDataset):
-    def __init__(self, image_dir, label_dir=None, transform=None, num_classes=13):
+    def __init__(self, image_dir, label_dir=None, transform=None, augmentations=None, num_classes=13):
         super().__init__(image_dir, label_dir, transform)
         self.img_paths = self._get_all_images(image_dir)
         self.label_paths = self._get_all_images(label_dir) if label_dir else None
-        self.transform = transform
         self.num_classes = num_classes
-
-    def _get_all_images(self, root_dir):
-        image_paths = []
-        for root, _, files in os.walk(root_dir):
-            for file in files:
-                if not file.startswith('.') and file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
-                    image_paths.append(os.path.join(root, file))
-        return sorted(image_paths)
-
-    def __len__(self):
-        return len(self.img_paths)
+        self.augmentations = augmentations
 
     def __getitem__(self, idx):
-        image = Image.open(self.img_paths[idx]).convert("L")
-        image = np.array(image, dtype=np.float32) / 255.0
-
-        if self.transform:
-            image = self.transform(image)
-
-        image = torch.tensor(image, dtype=torch.float32).unsqueeze(0)
-
+        image = np.array(Image.open(self.img_paths[idx]).convert("L"), dtype=np.float32) / 255.0
         label = None
         if self.label_paths:
-            label = Image.open(self.label_paths[idx])
-            label = np.array(label, dtype=np.int64)
-            label = torch.tensor(label, dtype=torch.long)
-            label = one_hot(label, num_classes=self.num_classes).permute(2, 0, 1).float()
+            label = np.array(Image.open(self.label_paths[idx]), dtype=np.int64)
+
+        # Apply augmentations if provided
+        if self.augmentations:
+            augmented = self.augmentations(image=image, mask=label)
+            image = augmented['image']
+            label = augmented['mask']
+        else:
+            # Default transformation without augmentation
+            image = transforms.ToTensor()(image).float()
+            if label is not None:
+                label = torch.tensor(label, dtype=torch.long)
+
+        if label is not None:
+            label = one_hot(torch.tensor(label, dtype=torch.long), num_classes=self.num_classes)
+            label = label.permute(2, 0, 1).float()  # Convert to [C, H, W]
 
         return {'images': image, 'labels': label}
 
@@ -95,7 +105,7 @@ class CombinedLoss(nn.Module):
         ce = self.ce_loss(pred, torch.argmax(target, dim=1))
         
         # Return weighted combination
-        return 0.35 * ce + 0.65 * dice
+        return 0.3 * ce + 0.7 * dice
 
 
 # Define class weights for Cross-Entropy Loss only

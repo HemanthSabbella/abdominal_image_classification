@@ -52,6 +52,8 @@ pip3 install torch
 pip3 install scipy
 pip3 install pillow
 pip3 install pretrained-backbones-unet
+pip3 install albumentations
+
 
 # Submit your job to the cluster
 srun --gres=gpu:1 python3 /common/home/projectgrps/CS701/CS701G8/gitcodes/CS701_G8/main.py

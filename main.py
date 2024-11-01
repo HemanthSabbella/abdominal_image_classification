@@ -105,10 +105,10 @@ model = Unet(
     num_classes=13
 ).to(device)
 
-# load model from checkpoints/best_model_epoch26_dice0.8468.pth
-model_path = 'checkpoints/best_model_epoch7_dice0.8488.pth'
-model.load_state_dict(torch.load(model_path, map_location=device
-))
+# # load model from checkpoints/best_model_epoch26_dice0.8468.pth
+# model_path = 'checkpoints/best_model_epoch7_dice0.8488.pth'
+# model.load_state_dict(torch.load(model_path, map_location=device
+# ))
 
 # Define combined loss with DiceLoss and weighted Cross-Entropy Loss
 import torch
@@ -134,7 +134,7 @@ class CombinedLoss(nn.Module):
         ce = self.ce_loss(pred, torch.argmax(target, dim=1))
         
         # Return weighted combination
-        return 0.25 * ce + 0.75 * dice
+        return 0.3 * ce + 0.7 * dice
 
 
 # Define class weights for Cross-Entropy Loss only

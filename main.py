@@ -38,7 +38,19 @@ class MedicalImageDataset(SemanticSegmentationDataset):
         self.num_classes = num_classes
         self.augmentations = augmentations
 
+    def _get_all_images(self, root_dir):
+        image_paths = []
+        for root, _, files in os.walk(root_dir):
+            for file in files:
+                if not file.startswith('.') and file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
+                    image_paths.append(os.path.join(root, file))
+        return sorted(image_paths)
+
+    def __len__(self):
+        return len(self.img_paths)
+
     def __getitem__(self, idx):
+        # Load image
         image = np.array(Image.open(self.img_paths[idx]).convert("L"), dtype=np.float32) / 255.0
         label = None
         if self.label_paths:

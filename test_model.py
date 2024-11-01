@@ -47,7 +47,7 @@ model = Unet(
 ).to(device)
 
 # Load the pre-trained model weights
-model_path = 'checkpoints/best_model_epoch26_dice0.8468.pth'  # Adjust the path as needed
+model_path = 'checkpoints/best_model_epoch7_dice0.8488.pth'  # Adjust the path as needed
 model.load_state_dict(torch.load(model_path, map_location=device))
 model.eval()
 

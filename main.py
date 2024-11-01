@@ -134,7 +134,7 @@ class CombinedLoss(nn.Module):
         ce = self.ce_loss(pred, torch.argmax(target, dim=1))
         
         # Return weighted combination
-        return 0.25 * ce + 0.85 * dice
+        return 0.25 * ce + 0.75 * dice
 
 
 # Define class weights for Cross-Entropy Loss only

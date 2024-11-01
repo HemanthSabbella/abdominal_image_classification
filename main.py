@@ -1,201 +1,181 @@
+import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import DataLoader
+from backbones_unet.model.unet import Unet
+from backbones_unet.utils.dataset import SemanticSegmentationDataset
+from backbones_unet.model.losses import DiceLoss  # Use backbone DiceLoss
+from torch.optim import AdamW
 import numpy as np
-from scipy import ndimage
-import os
-from model import UNet
-from dataloader import MedicalImageDataset, custom_transform
 from PIL import Image
+from torch.nn.functional import one_hot
 
-class DiceLoss(torch.nn.Module):
-    def __init__(self, smooth=1.0):
-        super(DiceLoss, self).__init__()
-        self.smooth = smooth
+# Set up device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def forward(self, pred, target):
-        # Convert target to one-hot encoding
-        target_one_hot = F.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2).float()
-        
-        # Apply softmax to the predictions if not already applied
-        pred = F.softmax(pred, dim=1)
-        
-        # Compute intersection and union for each class
-        intersection = torch.sum(pred * target_one_hot, dim=(2, 3))
-        union = torch.sum(pred, dim=(2, 3)) + torch.sum(target_one_hot, dim=(2, 3))
-        
-        # Calculate Dice Score for each class and average over batch and classes
-        dice_score = (2 * intersection + self.smooth) / (union + self.smooth)
-        dice_loss = 1 - dice_score.mean()
+# Define custom dataset
+class MedicalImageDataset(SemanticSegmentationDataset):
+    def __init__(self, image_dir, label_dir=None, transform=None, num_classes=13):
+        super().__init__(image_dir, label_dir, transform)
+        self.img_paths = self._get_all_images(image_dir)
+        self.label_paths = self._get_all_images(label_dir) if label_dir else None
+        self.transform = transform
+        self.num_classes = num_classes
 
-        return dice_loss
+    def _get_all_images(self, root_dir):
+        image_paths = []
+        for root, _, files in os.walk(root_dir):
+            for file in files:
+                if not file.startswith('.') and file.lower().endswith(('.png', '.jpg', '.jpeg', '.tif', '.tiff')):
+                    image_paths.append(os.path.join(root, file))
+        return sorted(image_paths)
 
+    def __len__(self):
+        return len(self.img_paths)
+
+    def __getitem__(self, idx):
+        image = Image.open(self.img_paths[idx]).convert("L")
+        image = np.array(image, dtype=np.float32) / 255.0
+
+        if self.transform:
+            image = self.transform(image)
+
+        image = torch.tensor(image, dtype=torch.float32).unsqueeze(0)
+
+        label = None
+        if self.label_paths:
+            label = Image.open(self.label_paths[idx])
+            label = np.array(label, dtype=np.int64)
+            label = torch.tensor(label, dtype=torch.long)
+            label = one_hot(label, num_classes=self.num_classes).permute(2, 0, 1).float()
+
+        return {'images': image, 'labels': label}
+
+# Paths to images and masks
 train_image_dir = '../Public_leaderboard_data/train_images'
 train_label_dir = '../Public_leaderboard_data/train_labels'
 val_image_dir = '../Public_leaderboard_data/val_images'
 val_label_dir = '../Public_leaderboard_data/val_labels'
-voxel_spacing_file = '../Public_leaderboard_data/spacing_mm.txt'
 
-train_dataset = MedicalImageDataset(
-    image_dir=train_image_dir, 
-    label_dir=train_label_dir, 
-    voxel_spacing_file=voxel_spacing_file, 
-    transform=custom_transform
-)
+# Initialize datasets and dataloaders
+train_dataset = MedicalImageDataset(image_dir=train_image_dir, label_dir=train_label_dir, num_classes=13)
+val_dataset = MedicalImageDataset(image_dir=val_image_dir, label_dir=val_label_dir, num_classes=13)
+
 train_loader = DataLoader(train_dataset, batch_size=4, shuffle=True)
-
-val_dataset = MedicalImageDataset(
-    image_dir=val_image_dir, 
-    label_dir=val_label_dir, 
-    voxel_spacing_file=voxel_spacing_file, 
-    transform=custom_transform
-)
 val_loader = DataLoader(val_dataset, batch_size=4, shuffle=False)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-model = UNet(in_channels=1, out_channels=13).to(device)
+# Initialize the model with the pretrained backbone
+model = Unet(
+    backbone='convnext_base',
+    in_channels=1,
+    num_classes=13
+).to(device)
 
-optimizer = optim.Adam(model.parameters(), lr=1e-4)
-criterion = torch.nn.CrossEntropyLoss()
-# criterion = DiceLoss()
+# Define combined loss with DiceLoss and weighted Cross-Entropy Loss
+import torch
+import torch.nn as nn
+from backbones_unet.model.losses import DiceLoss  # Use backbone DiceLoss
 
-checkpoint_dir = 'checkpoints'
-os.makedirs(checkpoint_dir, exist_ok=True)
+class CombinedLoss(nn.Module):
+    def __init__(self):
+        super(CombinedLoss, self).__init__()
+        self.dice_loss = DiceLoss()  # Using DiceLoss from backbone
+        self.ce_loss = nn.CrossEntropyLoss()
 
-def compute_dice(pred, target, smooth=1e-6):
-    # pred_flat = pred.flatten()
-    # target_flat = target.flatten()
-    pred_flat = (pred > 0.5).astype(np.uint8).flatten()  # Ensure binary mask
-    target_flat = (target > 0.5).astype(np.uint8).flatten()  
-    intersection = np.sum(pred_flat * target_flat)
-    dice = (2. * intersection + smooth) / (np.sum(pred_flat) + np.sum(target_flat) + smooth)
-    return dice
+    def forward(self, pred, target):
+        # Apply softmax to predictions for multi-class probabilities
+        pred_softmax = torch.softmax(pred, dim=1)
+        
+        # If target is not one-hot encoded, encode it
+        if target.shape[1] != pred.shape[1]:  # Check if target is not one-hot
+            target = torch.nn.functional.one_hot(target, num_classes=pred.shape[1]).permute(0, 3, 1, 2).float()
 
-def compute_nsd(pred, target, spacing, tolerance=1.0):
-    pred_surface = np.logical_xor(pred, ndimage.binary_erosion(pred))
-    target_surface = np.logical_xor(target, ndimage.binary_erosion(target))
+        # Compute Dice and Cross-Entropy Loss
+        dice = self.dice_loss(pred_softmax, target)
+        ce = self.ce_loss(pred, torch.argmax(target, dim=1))
+        
+        # Return weighted combination
+        return 0.35 * ce + 0.65 * dice
 
-    # Compute distance transforms
-    pred_distances = ndimage.distance_transform_edt(~pred_surface, sampling=spacing)
-    target_distances = ndimage.distance_transform_edt(~target_surface, sampling=spacing)
 
-    pred_to_target_distance = pred_distances[target_surface]
-    target_to_pred_distance = target_distances[pred_surface]
+# Define class weights for Cross-Entropy Loss only
+criterion = CombinedLoss()
 
-    within_tolerance_pred = np.sum(pred_to_target_distance <= tolerance)
-    within_tolerance_target = np.sum(target_to_pred_distance <= tolerance)
+# Set up optimizer
+optimizer = AdamW(model.parameters(), lr=1e-4)
 
-    total_surface_points = np.sum(pred_surface) + np.sum(target_surface)
-    nsd = (within_tolerance_pred + within_tolerance_target) / total_surface_points
+# Training and Validation Functions
+def train_model(model, train_loader, val_loader, epochs=10, checkpoint_dir='checkpoints'):
+    best_dice = 0.0
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
-    return nsd
-
-# def compute_nsd(pred, target, spacing, tolerance=1.0):
-#     pred_surface = np.logical_xor(pred, ndimage.binary_erosion(pred))
-#     target_surface = np.logical_xor(target, ndimage.binary_erosion(target))
-    
-#     spacing_2d = spacing[:2] if len(spacing) > 2 else spacing
-
-#     distances_target_to_pred = ndimage.distance_transform_edt(~target_surface, sampling=spacing_2d)
-#     distances_pred_to_target = ndimage.distance_transform_edt(~pred_surface, sampling=spacing_2d)
-
-#     num_surface_points_pred = distances_pred_to_target.size
-#     num_surface_points_target = distances_target_to_pred.size
-#     num_within_tolerance_pred = np.sum(distances_pred_to_target <= tolerance)
-#     num_within_tolerance_target = np.sum(distances_target_to_pred <= tolerance)
-
-#     nsd = (num_within_tolerance_pred + num_within_tolerance_target) / (num_surface_points_pred + num_surface_points_target)
-#     return nsd
-
-def train_model(model, train_loader, val_loader, epochs, model_path='final_unet_model.pth'):
     for epoch in range(epochs):
         model.train()
-        running_loss = 0.0
+        train_loss = 0.0
 
         for batch in train_loader:
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
 
+            optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
-            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            running_loss += loss.item()
+            train_loss += loss.item()
 
-        avg_train_loss = running_loss / len(train_loader)
+        avg_train_loss = train_loss / len(train_loader)
+        avg_val_loss, avg_dice = validate_model(model, val_loader)
 
-        avg_val_loss, avg_dsc, avg_nsd = validate_model(model, val_loader)
+        print(f"Epoch [{epoch+1}/{epochs}], Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Dice: {avg_dice:.4f}")
 
-        print(f"Epoch {epoch+1}/{epochs}, Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, DSC: {avg_dsc:.4f}, NSD: {avg_nsd:.4f}")
+        if avg_dice > best_dice:
+            best_dice = avg_dice
+            best_model_path = os.path.join(checkpoint_dir, f'best_model_epoch{epoch+1}_dice{best_dice:.4f}.pth')
+            torch.save(model.state_dict(), best_model_path)
+            print(f"Best model saved with Dice: {best_dice:.4f}")
 
-        # checkpoint_path = os.path.join(checkpoint_dir, f'unet_model_epoch_{epoch+1}.pth')
-        # torch.save(model.state_dict(), checkpoint_path)
-        # print(f"Checkpoint saved to {checkpoint_path}")
+    final_model_path = os.path.join(checkpoint_dir, 'final_model.pth')
+    torch.save(model.state_dict(), final_model_path)
+    print(f"Final model saved to {final_model_path}")
 
-    torch.save(model.state_dict(), model_path)
-    print(f"Final model saved to {model_path}")
-
-def validate_model(model, val_loader, save_images=True, save_dir='validation_samples'):
+def validate_model(model, val_loader, num_classes=13):
     model.eval()
     val_loss = 0.0
-    dsc_scores = []
-    nsd_scores = []
-
-    print("here")
-    if save_images:
-        # print("Save images folder")
-        # print(save_images)
-        os.makedirs(save_dir, exist_ok=True)
+    per_class_intersection = torch.zeros(num_classes, device=device)
+    per_class_union = torch.zeros(num_classes, device=device)
 
     with torch.no_grad():
-        for batch_idx, batch in enumerate(val_loader):
+        for batch in val_loader:
             images = batch['images'].to(device)
             labels = batch['labels'].to(device)
-            outputs = model(images)
 
+            outputs = model(images)
             loss = criterion(outputs, labels)
             val_loss += loss.item()
 
-            preds = torch.argmax(outputs, dim=1).cpu().numpy()
-            labels = labels.cpu().numpy()
+            preds = torch.argmax(outputs, dim=1)
+            targets = torch.argmax(labels, dim=1)
 
-            for i in range(preds.shape[0]):
-                pred = preds[i]
-                target = labels[i]
+            for cls in range(num_classes):
+                pred_class = (preds == cls).float()
+                target_class = (targets == cls).float()
 
-                if 'voxel_spacing' in batch and len(batch['voxel_spacing']) > i:
-                    spacing = batch['voxel_spacing'][i][:2]
-                else:
-                    spacing = (1.0, 1.0)
+                intersection = (pred_class * target_class).sum()
+                union = pred_class.sum() + target_class.sum()
 
-                dsc = compute_dice(pred, target)
-                dsc_scores.append(dsc)
-
-                nsd = compute_nsd(pred, target, spacing, tolerance=2.0)  # Adjusted tolerance
-                nsd_scores.append(nsd)
-
-                # if save_images and batch_idx < 5 and i < 5:
-                #     # print(save_images)
-                #     # print(batch_idx)
-                #     # print(i)
-                #     # pred_img = (pred * 255 / (pred.max() if pred.max() > 0 else 1)).astype(np.uint8)
-                #     # target_img = (target * 255 / (target.max() if target.max() > 0 else 1)).astype(np.uint8)
-
-                #     pred_img = (pred * 255).astype(np.uint8)
-                #     target_img = (target * 255).astype(np.uint8)
-
-                #     Image.fromarray(pred_img).save(os.path.join(save_dir, f'pred_batch{batch_idx}_img{i}.png'))
-                #     Image.fromarray(target_img).save(os.path.join(save_dir, f'gt_batch{batch_idx}_img{i}.png'))
+                per_class_intersection[cls] += intersection
+                per_class_union[cls] += union
 
     avg_val_loss = val_loss / len(val_loader)
-    avg_dsc = np.mean(dsc_scores) if dsc_scores else 0
-    avg_nsd = np.mean(nsd_scores) if nsd_scores else 0
+    per_class_dice_scores = 2 * per_class_intersection / torch.clamp(per_class_union, min=1e-6)
+    avg_dice_score = per_class_dice_scores.mean().item()
 
-    return avg_val_loss, avg_dsc, avg_nsd
+    for cls in range(num_classes):
+        print(f"Class {cls} Dice Score: {per_class_dice_scores[cls]:.4f}")
 
+    print(f"Average Dice Score: {avg_dice_score:.4f}")
+    return avg_val_loss, avg_dice_score
 
-
-train_model(model, train_loader, val_loader, epochs=10, model_path='final_unet_model_ep10.pth')
+# Start training
+train_model(model, train_loader, val_loader, epochs=30)

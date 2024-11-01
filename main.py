@@ -106,7 +106,7 @@ model = Unet(
 ).to(device)
 
 # load model from checkpoints/best_model_epoch26_dice0.8468.pth
-model_path = 'checkpoints/best_model_epoch26_dice0.8468.pth'
+model_path = 'checkpoints/best_model_epoch7_dice0.8488.pth'
 model.load_state_dict(torch.load(model_path, map_location=device
 ))
 

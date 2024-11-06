@@ -32,7 +32,7 @@ class MedicalTestDataset(Dataset):
         return {'images': image, 'image_path': image_path}
 
 # Define the test dataset and dataloader
-test_image_dir = '../Public_leaderboard_data/test1_images'
+test_image_dir = '../Public_leaderboard_data/test2_images'
 test_dataset = MedicalTestDataset(test_image_dir)
 test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
@@ -52,7 +52,7 @@ model.load_state_dict(torch.load(model_path, map_location=device))
 model.eval()
 
 # Directory to save the predicted masks
-output_dir = 'test_predictions'
+output_dir = 'test_predictions_private'
 os.makedirs(output_dir, exist_ok=True)
 
 # Perform inference on the test data
